@@ -6,8 +6,11 @@ import (
 	"reflect"
 )
 
+// Transducers take a ReducerFn and return a new ReducerFn transforming it
+// for additional functionalliy.
 type Transducer func(ReducerFn) ReducerFn
 
+// Compose is function composition of two Transducers.
 func (t Transducer) Compose(other Transducer) Transducer {
 	return func(s ReducerFn) ReducerFn {
 		return t(other(s))
@@ -18,9 +21,17 @@ type initFn func() interface{}
 type resultFn func(result interface{}) interface{}
 type reducingFn func(result, input interface{}) interface{}
 
+// ReducerFn represents a reducing function. A reducer is set of functions of  0, 1 and 2 arity respectively. Here this is represented by an interface of three methods and a constructor to build a reified version of this from 3 passed in functions. This allows for a more functional style when writing most transducers.
 type ReducerFn interface {
+	// Arity 0 is known as Init and is used to retrieve
+	// an initial value for a reduction
 	Init() interface{}
+	// Arity 1 is known as Result and returns the result of the reduction.
+	// This is typically the identity function and the Completing
+	// constructor will create this from only the Arity 2 function/
 	Result(result interface{}) interface{}
+	// Arity 2 is the Step function, this computes one
+	// step of the reduction.
 	Step(result, input interface{}) interface{}
 }
 
@@ -40,6 +51,14 @@ func (t *reducer) Step(result, input interface{}) interface{} {
 	return t.step(result, input)
 }
 
+// Reducer constructs a ReducerFn from the three functions. This allows
+// a functional defintion style for ReducerFns. init is any function matching
+// the signature func() T. result is any function matching the signature
+// func(x iT) oT. step is any function matching the signature
+// func(r rT, i iT) rT. Reflection is used to call thes functions unless they
+// are of the non-specialized types func()interface{},
+// func(interface{})interface{}, and func(interface,interface{})interface{}
+// respectively.
 func Reducer(
 	init interface{},
 	result interface{},
@@ -52,6 +71,9 @@ func Reducer(
 	}
 }
 
+// Reducing returns a Transducer that only modifies the reducing step function.
+// rfn is the new reducing function and must match the signature
+// func(a rT, i iT) rT.
 func Reducing(rfn interface{}) Transducer {
 	reducer := wrapReducing(rfn)
 	return func(step ReducerFn) ReducerFn {
@@ -67,6 +89,9 @@ func Reducing(rfn interface{}) Transducer {
 	}
 }
 
+// Completing returns a ReducerFn with a standard Init and Result function.
+// rfn is the new reduction step and must match the signature
+// func(a rT, i iT) rT.
 func Completing(rfn interface{}) ReducerFn {
 	reducer := wrapReducing(rfn)
 	return Reducer(
@@ -92,10 +117,13 @@ func (r *reduced) String() string {
 	return fmt.Sprintf("Reduced(%v)", r.val)
 }
 
+// Reduced returns a value wrapped such that it is marked
+// to signify termination of the processing.
 func Reduced(val interface{}) interface{} {
 	return &reduced{val: val}
 }
 
+// EnsureReduced wraps a value if it is not currently Reduced.
 func EnsureReduced(val interface{}) interface{} {
 	if IsReduced(val) {
 		return val
@@ -103,11 +131,15 @@ func EnsureReduced(val interface{}) interface{} {
 	return Reduced(val)
 }
 
+// IsReduced returns whether or not the value is Reduced.
 func IsReduced(val interface{}) bool {
 	_, ok := val.(*reduced)
 	return ok
 }
 
+// Unreduced unwraps the original value from a Reduced value.
+// If the value is not currently wrapped then it is returned
+// unmodified.
 func Unreduced(val interface{}) interface{} {
 	if IsReduced(val) {
 		return val.(*reduced).Deref()
@@ -115,6 +147,10 @@ func Unreduced(val interface{}) interface{} {
 	return val
 }
 
+// Replace returns a transducer that will replace elements of a stream
+// with corresponding elements in smap. smap may be one of the following
+// types interface{ Find(interface{})(interface{},bool) },
+// map[interface{}]interface{}, map[kT]vT.
 func Replace(smap interface{}) Transducer {
 	return Map(func(in interface{}) interface{} {
 		switch m := smap.(type) {
@@ -143,6 +179,9 @@ func Replace(smap interface{}) Transducer {
 	})
 }
 
+// Map returns a transducer that will replace elements in the stream
+// with a corresponding element from the range of f. f must match the
+// signature func(iT) oT.
 func Map(f interface{}) Transducer {
 	mapFn := wrapMapper(f)
 	return func(rf ReducerFn) ReducerFn {
@@ -154,6 +193,9 @@ func Map(f interface{}) Transducer {
 	}
 }
 
+// Filter returns a transducer that will skip elements in a stream
+// if they do not match the predicate. pred must match the signature
+// func(i iT) bool.
 func Filter(pred interface{}) Transducer {
 	predFn := wrapPredicate(pred)
 	return func(rf ReducerFn) ReducerFn {
@@ -168,6 +210,9 @@ func Filter(pred interface{}) Transducer {
 	}
 }
 
+// Remove returns a transducer that will skip elements in a stream
+// if they do match the predicate. pred must match the signature
+// func(i iT) bool.
 func Remove(pred interface{}) Transducer {
 	predFn := wrapPredicate(pred)
 	return func(rf ReducerFn) ReducerFn {
@@ -182,6 +227,8 @@ func Remove(pred interface{}) Transducer {
 	}
 }
 
+// Take returns a stateful transducer that will end processing of a
+// stream after n elements.
 func Take(n int) Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		count := n
@@ -202,6 +249,9 @@ func Take(n int) Transducer {
 	}
 }
 
+// TakeWhile returns a transducer that will end processing of
+// a stream if the predicate becomes false. pred must match the signature
+// func(i iT) bool.
 func TakeWhile(pred interface{}) Transducer {
 	predFn := wrapPredicate(pred)
 	return func(rf ReducerFn) ReducerFn {
@@ -216,6 +266,8 @@ func TakeWhile(pred interface{}) Transducer {
 	}
 }
 
+// TakeNth returns a stateful transducer that will skip all elements of
+// a stream whose index is not divisible by n.
 func TakeNth(n int) Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		count := 0
@@ -231,6 +283,8 @@ func TakeNth(n int) Transducer {
 	}
 }
 
+// Drop returns a stateful transducer that will skip the first n elements
+// of a stream and process the rest.
 func Drop(n int) Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		dropped := 0
@@ -246,6 +300,9 @@ func Drop(n int) Transducer {
 	}
 }
 
+// DropWhile returns a stateful transducer that will skip all elements
+// of the stream until the predicate returns false and process the rest.
+// pred must match the signature func(i iT) bool.
 func DropWhile(pred interface{}) Transducer {
 	predFn := wrapPredicate(pred)
 	return func(rf ReducerFn) ReducerFn {
@@ -262,6 +319,9 @@ func DropWhile(pred interface{}) Transducer {
 	}
 }
 
+// Keep returns a transducer that will keep all non-nil elements of a stream
+// and skip the rest. f must be of the signature func(i iT) oT; oT must be
+// nilable or all elements will be kept.
 func Keep(f interface{}) Transducer {
 	mapFn := wrapMapper(f)
 	return func(rf ReducerFn) ReducerFn {
@@ -277,6 +337,9 @@ func Keep(f interface{}) Transducer {
 	}
 }
 
+// KeepIndexed returns a stateful transducer that will keep all
+// non-nil elements of a stream and skip the rest. f must be of the signature
+// func(idx int, i iT) oT; oT must be nilable or all elements will be kept.
 func KeepIndexed(f interface{}) Transducer {
 	var fn func(int, interface{}) interface{}
 	switch v := f.(type) {
@@ -302,6 +365,8 @@ func KeepIndexed(f interface{}) Transducer {
 	}
 }
 
+// Dedupe returns a stateful transducer that will deduplicate
+// adjacent elements of a stream.
 func Dedupe() Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		var prior interface{}
@@ -317,12 +382,17 @@ func Dedupe() Transducer {
 	}
 }
 
+// RandomSample returns a transducer that will process a random sampling of
+// data from the stream, all other data is skipped.
 func RandomSample(prob float64) Transducer {
 	return Filter(func(_ interface{}) bool {
 		return rand.Float64() < prob
 	})
 }
 
+// PartitionBy returns a stateful transducer that will partition a stream
+// when f returns a different result than previous result. f must match
+// the signature func(i iT) oT.
 func PartitionBy(f interface{}) Transducer {
 	mapFn := wrapMapper(f)
 	return func(rf ReducerFn) ReducerFn {
@@ -365,6 +435,9 @@ func PartitionBy(f interface{}) Transducer {
 	}
 }
 
+// PartitionAll returns a stateful transducer that will partition a stream
+// into n sized buckets. The final bucket may be smaller than n if the number of
+// elements is not divisible by n.
 func PartitionAll(n int) Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		part := make([]interface{}, 0, n)
@@ -396,6 +469,8 @@ func PartitionAll(n int) Transducer {
 	}
 }
 
+// Interpose is a stateful transducer that will place an element
+// between each element in a stream.
 func Interpose(sep interface{}) Transducer {
 	return func(rf ReducerFn) ReducerFn {
 		started := false
@@ -416,7 +491,9 @@ func Interpose(sep interface{}) Transducer {
 }
 
 // Cat returns a transducer that will concatenate the contents of each input.
-// reduce must be of the form func(rfn func(r rT, i iT) rT, r rT, i iT) rT.
+// reduce is a function that can traverse a sequence. It must be of the form
+// func(rfn func(r rT, i iT) rT, r rT, i iT) rT. This allows multiple stragies
+// for traversing any type of sequence.
 func Cat(reduce interface{}) Transducer {
 	reduceFn := wrapReduce(reduce)
 	return func(rf ReducerFn) ReducerFn {
@@ -439,6 +516,9 @@ func Mapcat(reduce interface{}, f interface{}) Transducer {
 	return Compose(Map(f), Cat(reduce))
 }
 
+// PreservingReduced is a transducer that will preserve the termination
+// status of a value by encapsulating an already reduced value in another
+// reduced value.
 func PreservingReduced(rf ReducerFn) ReducerFn {
 	return Reducer(rf.Init, rf.Result,
 		func(result, input interface{}) interface{} {
@@ -450,6 +530,7 @@ func PreservingReduced(rf ReducerFn) ReducerFn {
 		})
 }
 
+// Compose composes transducers together. ts[0](ts[1](...ts[n]))
 func Compose(ts ...Transducer) Transducer {
 	switch len(ts) {
 	case 0:

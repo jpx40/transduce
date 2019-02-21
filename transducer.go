@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+
+	"jsouthworth.net/go/dyn"
 )
 
 // Transducers take a ReducerFn and return a new ReducerFn transforming it
@@ -622,38 +624,5 @@ func wrapResult(f interface{}) resultFn {
 }
 
 func apply(f interface{}, args ...interface{}) interface{} {
-	fnv := reflect.ValueOf(f)
-	fnt := fnv.Type()
-	argvs := make([]reflect.Value, len(args))
-	for i, arg := range args {
-		if arg == nil {
-			fnint := fnt.In(i)
-			fnink := fnint.Kind()
-			switch fnink {
-			case reflect.Chan, reflect.Func,
-				reflect.Interface, reflect.Map,
-				reflect.Ptr, reflect.Slice:
-				argvs[i] = reflect.Zero(fnint)
-			default:
-				// this will cause a panic but that is what is
-				// intended
-				argvs[i] = reflect.ValueOf(arg)
-			}
-		} else {
-			argvs[i] = reflect.ValueOf(arg)
-		}
-	}
-	outvs := fnv.Call(argvs)
-	switch len(outvs) {
-	case 0:
-		return nil
-	case 1:
-		return outvs[0].Interface()
-	default:
-		outs := make([]interface{}, len(outvs))
-		for i, outv := range outvs {
-			outs[i] = outv.Interface()
-		}
-		return outs
-	}
+	return dyn.Apply(f, args...)
 }

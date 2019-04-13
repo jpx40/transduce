@@ -19,10 +19,6 @@ func (t Transducer) Compose(other Transducer) Transducer {
 	}
 }
 
-type initFn func() interface{}
-type resultFn func(result interface{}) interface{}
-type reducingFn func(result, input interface{}) interface{}
-
 // ReducerFn represents a reducing function. A reducer is set of functions of  0, 1 and 2 arity respectively. Here this is represented by an interface of three methods and a constructor to build a reified version of this from 3 passed in functions. This allows for a more functional style when writing most transducers.
 type ReducerFn interface {
 	// Arity 0 is known as Init and is used to retrieve
@@ -38,9 +34,9 @@ type ReducerFn interface {
 }
 
 type reducer struct {
-	init   initFn
-	result resultFn
-	step   reducingFn
+	init   func() interface{}
+	result func(result interface{}) interface{}
+	step   func(result, input interface{}) interface{}
 }
 
 func (t *reducer) Init() interface{} {
@@ -550,11 +546,9 @@ func Compose(ts ...Transducer) Transducer {
 	}
 }
 
-type predicate func(x interface{}) bool
-
-func wrapPredicate(f interface{}) predicate {
+func wrapPredicate(f interface{}) func(x interface{}) bool {
 	switch fn := f.(type) {
-	case predicate:
+	case func(x interface{}) bool:
 		return fn
 	default:
 		return func(in interface{}) bool {
@@ -563,11 +557,9 @@ func wrapPredicate(f interface{}) predicate {
 	}
 }
 
-type mapper func(interface{}) interface{}
-
-func wrapMapper(f interface{}) mapper {
+func wrapMapper(f interface{}) func(interface{}) interface{} {
 	switch fn := f.(type) {
-	case mapper:
+	case func(interface{}) interface{}:
 		return fn
 	default:
 		return func(in interface{}) interface{} {
@@ -576,11 +568,9 @@ func wrapMapper(f interface{}) mapper {
 	}
 }
 
-type reduceFn func(interface{}, interface{}, interface{}) interface{}
-
-func wrapReduce(f interface{}) reduceFn {
+func wrapReduce(f interface{}) func(interface{}, interface{}, interface{}) interface{} {
 	switch fn := f.(type) {
-	case reduceFn:
+	case func(interface{}, interface{}, interface{}) interface{}:
 		return fn
 	default:
 		return func(rfn, res, in interface{}) interface{} {
@@ -589,9 +579,9 @@ func wrapReduce(f interface{}) reduceFn {
 	}
 }
 
-func wrapReducing(f interface{}) reducingFn {
+func wrapReducing(f interface{}) func(r, i interface{}) interface{} {
 	switch fn := f.(type) {
-	case reducingFn:
+	case func(result, input interface{}) interface{}:
 		return fn
 	default:
 		return func(res, in interface{}) interface{} {
@@ -600,9 +590,9 @@ func wrapReducing(f interface{}) reducingFn {
 	}
 }
 
-func wrapInit(f interface{}) initFn {
+func wrapInit(f interface{}) func() interface{} {
 	switch fn := f.(type) {
-	case initFn:
+	case func() interface{}:
 		return fn
 	default:
 		return func() interface{} {
@@ -612,9 +602,9 @@ func wrapInit(f interface{}) initFn {
 
 }
 
-func wrapResult(f interface{}) resultFn {
+func wrapResult(f interface{}) func(interface{}) interface{} {
 	switch fn := f.(type) {
-	case resultFn:
+	case func(interface{}) interface{}:
 		return fn
 	default:
 		return func(result interface{}) interface{} {

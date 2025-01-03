@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"reflect"
 
-	"jsouthworth.net/go/dyn"
+	"github.com/jpx40/dyn"
 )
 
 // Transducers take a ReducerFn and return a new ReducerFn transforming it
